@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Module for calculating and plotting overall performance of Regobs."""
+"""Module for extracting results from tests and profiles in Regobs."""
 
 import setenvironment as env
 from varsomdata import getvarsompickles as gvp
@@ -163,6 +163,29 @@ class TestsAndLayerInfo:
 
 
 def get_tests_and_layer_info_to_gustav():
+    """Gustav Pless wrote 28th Oct 2019:
+
+    Hei
+
+    Jeg jobber med en liten studie der jeg sammenligner et sett stabilitetstester og
+    registrerer forskjeller. Jeg utfører et sett tester sammen med en snøprofil og
+    kan se på hvilke tester som er effektive på hvilken type svakt lag, dybde, hardhet
+    etc. Ulempen min er at jeg ikke får et godt statistisk utvalg, men det finnes jo i
+    regobs. I hvert fall på ECT og CT. Vedlagt er det relativt begrensede
+    datagrunnlaget jeg har enn så lenge.
+
+    Er det mulig å få dratt ut data fra alle ECT og CT tester fra regobs? Da kan jeg
+    for eksempel se på resultater som på hvilken dybde ECT og CT gir respons, hvis det
+     finnes noen sammenheng mellom forplanting og dybde etc.
+
+    I tillegg skulle jeg kunne se på alle stabilitetstester som er utført sammen med
+    snøprofiler og trekke ut data fra det. Men det er jeg redd blir en mye mer manuell oppgave.
+
+    Mvh
+    Gustav
+
+    :return:
+    """
 
     years = ['2019-20', '2018-19', '2017-18', '2016-17']
     # years = ['2018-19']
@@ -176,7 +199,7 @@ def get_tests_and_layer_info_to_gustav():
     for o in all_observations:
         for f in o.Observations:
             if isinstance(f, go.ColumnTest) or isinstance(f, go.ProfileColumnTest):
-                if f.CompetenceLevelTID >= 120:
+                if f.CompetenceLevelTID >= 120:  # Level of Competence at *** or more
                     if 'Ikke gitt' not in f.PropagationName:
 
                         profile = None
@@ -197,8 +220,6 @@ def get_tests_and_layer_info_to_gustav():
                 f.write(';'.join([_str(d) for d in t.to_ord_dict().keys()]) + '\n')
                 make_header = False
             f.write(';'.join([_str(d) for d in t.to_ord_dict().values()]) + '\n')
-
-    a = 1
 
 
 if __name__ == '__main__':
