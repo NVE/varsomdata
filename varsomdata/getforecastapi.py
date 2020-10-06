@@ -8,6 +8,8 @@ Modifications:
 """
 
 import requests
+import math
+from concurrent import futures
 import re
 import datetime as dt
 import numpy as np
@@ -770,45 +772,59 @@ def get_avalanche_warnings_as_json(region_ids, from_date, to_date, lang_key=1, r
     Eg. http://api01.nve.no/hydrology/forecast/avalanche/v2.0.2/api/AvalancheWarningByRegion/Detail/10/1/2013-01-10/2013-01-20
         http://api01.nve.no/hydrology/forecast/avalanche/v2.0.2/api/AvalancheWarningByRegion/Detail/29/1/2015-12-02/2015-12-02
     """
+    MAX_WORKERS=800
+    TIME_DELTA=30
 
     # If input isn't a list, make it so
     if not isinstance(region_ids, list):
         region_ids = [region_ids]
 
     warnings_ = []
-    recursive_count_default = recursive_count   # need the default for later
+    future_tuples = []
 
-    for region_id in region_ids:
+    workers = min(MAX_WORKERS, len(region_ids) * math.ceil((to_date - from_date).days / TIME_DELTA))
+    with futures.ThreadPoolExecutor(workers) as executor:
+        for region_id in region_ids:
 
-        if len(region_ids) > 1:
-            # if we are looping the initial list make sure each item gets the recursive count default
-            recursive_count = recursive_count_default
+            # In nov 2016 we updated all regions to have ids in th 3000´s. GIS and regObs equal.
+            # Before that GIS har numbers 0-99 and regObs 100-199. Messy..
+            # Also, new api dont support old forecasts due to model changes.
+            if region_id > 100 and region_id < 3000:
+                region_id = region_id - 100
+                api_version = env.forecast_api_version_archive
+            else:
+                api_version = env.forecast_api_version
 
-        # In nov 2016 we updated all regions to have ids in th 3000´s. GIS and regObs equal.
-        # Before that GIS har numbers 0-99 and regObs 100-199. Messy..
-        # Also, new api dont support old forecasts due to model changes.
-        if region_id > 100 and region_id < 3000:
-            region_id = region_id - 100
-            api_version = env.forecast_api_version_archive
-        else:
-            api_version = env.forecast_api_version
+            tmp_from_date = from_date
+            while tmp_from_date <= to_date:
+                if to_date - tmp_from_date > dt.timedelta(days=TIME_DELTA):
+                    delta_date = tmp_from_date + dt.timedelta(days=TIME_DELTA)
+                else:
+                    delta_date = to_date
+                url = 'http://api01.nve.no/hydrology/forecast/avalanche/{4}/api/AvalancheWarningByRegion/Detail/{0}/{3}/{1}/{2}' \
+                    .format(region_id, tmp_from_date, delta_date, lang_key, api_version)
 
-        url = 'http://api01.nve.no/hydrology/forecast/avalanche/{4}/api/AvalancheWarningByRegion/Detail/{0}/{3}/{1}/{2}'\
-            .format(region_id, from_date, to_date, lang_key, api_version)
+                future = executor.submit(lambda x: requests.get(x), url)
+                future_tuples.append((region_id, tmp_from_date, delta_date, url, 0, future))
+                tmp_from_date = delta_date + dt.timedelta(days=1)
 
         # If at first you don't succeed, try and try again.
-        try:
-            warnings_region = requests.get(url).json()
-            lg.info("getforecastapi.py -> get_avalanche_warnings_as_json: {0} warnings found for {1} in {2} to {3}"
-                    .format(len(warnings_region), region_id, from_date, to_date))
-            warnings_ += warnings_region
+        while len(future_tuples):
+            region_id, tmp_from_date, delta_date, url, retries, future = future_tuples.pop()
 
-        except:
-            lg.error("getforecastapi.py -> get_avalanche_warnings_as_json: EXCEPTION. RECURSIVE COUNT {0} for {1} in {2} to {3}"
-                             .format(recursive_count, region_id, from_date, to_date))
-            if recursive_count > 1:
-                recursive_count -= 1        # count down
-                warnings_ += get_avalanche_warnings_as_json(region_id, from_date, to_date, lang_key, recursive_count=recursive_count)
+            try:
+                warnings_region = future.result().json()
+                lg.info("getforecastapi.py -> get_avalanche_warnings_as_json: {0} warnings found for {1} in {2} to {3}"
+                        .format(len(warnings_region), region_id, tmp_from_date, delta_date))
+                warnings_ += warnings_region
+
+            except:
+
+                lg.error("getforecastapi.py -> get_avalanche_warnings_as_json: EXCEPTION. RECURSIVE COUNT {0} for {1} in {2} to {3}"
+                                 .format(recursive_count, region_id, tmp_from_date, delta_date))
+                if retries < recursive_count - 1:
+                    future = executor.submit(lambda x: requests.get(x), url)
+                    future_tuples.insert(0, (region_id, tmp_from_date, delta_date, url, retries + 1, future))
 
     return warnings_
 
