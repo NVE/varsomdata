@@ -568,6 +568,10 @@ def get_forecast_regions(year, get_b_regions=False):
         region_ids = [3003, 3007, 3009, 3010, 3011, 3012, 3013, 3014, 3015, 3016, 3017, 3022, 3023, 3024, 3027, 3028, 3029, 3031, 3032, 3034, 3035, 3037]
         if get_b_regions:
             region_ids += [3001, 3002, 3004, 3005, 3006, 3008, 3018, 3019, 3020, 3021, 3025, 3026, 3030, 3033, 3036, 3038, 3039, 3040, 3041, 3042, 3043, 3044, 3045, 3046]
+    elif year == '2020-21':
+        region_ids = [3003, 3007, 3009, 3010, 3011, 3012, 3013, 3014, 3015, 3016, 3017, 3022, 3023, 3024, 3027, 3028, 3029, 3031, 3032, 3034, 3035, 3037]
+        if get_b_regions:
+            region_ids += [3001, 3002, 3004, 3005, 3006, 3008, 3018, 3019, 3020, 3021, 3025, 3026, 3030, 3033, 3036, 3038, 3039, 3040, 3041, 3042, 3043, 3044, 3045, 3046]
     else:
         region_ids = "No valid period given."
 
@@ -604,8 +608,17 @@ def get_dates_from_season(year):
         to_date = dt.date(2019, 9, 1)
     elif year == '2019-20':
         from_date = dt.date(2019, 9, 1)
-        to_date = dt.date.today()
-    elif year in ['2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020']:
+        to_date = dt.date(2020, 9, 1)
+    elif year == '2020-21':
+        from_date = dt.date(2020, 9, 1)
+        to_date = dt.date.today() if dt.date.today() < dt.date(2021, 9, 1) else dt.date(2021, 9, 1)
+    elif year == '2021-22':
+        from_date = dt.date(2021, 9, 1)
+        to_date = dt.date.today() if dt.date.today() < dt.date(2022, 9, 1) else dt.date(2022, 9, 1)
+    elif year == '2022-23':
+        from_date = dt.date(2022, 9, 1)
+        to_date = dt.date.today() if dt.date.today() < dt.date(2023, 9, 1) else dt.date(2023, 9, 1)
+    elif year in ['2012', '2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023']:
         from_date = dt.date(int(year), 1, 1)
         to_date = dt.date(int(year), 12, 31)
     else:
