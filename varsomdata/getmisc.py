@@ -459,6 +459,9 @@ def get_forecast_dates(year, padding=dt.timedelta(days=0)):
         to_date = dt.date(2019, 6, 1)
     elif year == '2019-20':
         from_date = dt.date(2019, 11, 1)
+        to_date = dt.date(2020, 6, 15)
+    elif year == '2020-21':
+        from_date = dt.date(2020, 12, 1)
         to_date = dt.date.today() + dt.timedelta(days=2)
     else:
         from_date = "Undefined dates"
@@ -501,6 +504,9 @@ def get_observation_dates(year, padding=dt.timedelta(days=0)):
         to_date = dt.date(2019, 7, 1)
     elif year == '2019-20':
         from_date = dt.date(2019, 10, 1)
+        to_date = dt.date(2020, 7, 1)
+    elif year == '2020-21':
+        from_date = dt.date(2020, 10, 1)
         to_date = dt.date.today() + dt.timedelta(days=2)
     else:
         from_date = "Undefined dates"
