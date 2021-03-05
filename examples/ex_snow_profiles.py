@@ -11,6 +11,7 @@ __author__ = 'raek'
 
 # get snow profiles during a period
 snow_profiles = go.get_snow_profile('2018-12-13', '2018-12-26')
+#print(vars(snow_profiles[0]))
 
 # look for profiles with persistent weak layers. Loop through all.
 profiles_with_prec_weak_layers = []
@@ -32,7 +33,7 @@ for p in snow_profiles:
         # Large facets (FC > 3mm) qualifies.
         elif 'FC' in grain_form_name:
             if l.SortOrder > 0:
-                if l.GrainSizeAvg >= 0.003:
+                if l.GrainSizeAvg is not None and l.GrainSizeAvg >= 0.003:
                     profiles_with_prec_weak_layers.append(p)
 
 print("Profiles hinting of persistent weak layers: \n")
