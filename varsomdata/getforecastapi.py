@@ -877,6 +877,7 @@ def get_avalanche_warnings_deprecated(region_ids, from_date, to_date, lang_key=1
     avalanche_warning_list = []
     avalanche_danger_list = []
     exception_counter = 0
+    print(warnings_as_json[0], '\n')
 
     for w in warnings_as_json:
         #try:
@@ -920,6 +921,8 @@ def get_avalanche_warnings_deprecated(region_ids, from_date, to_date, lang_key=1
             warning.set_main_message_en(w['MainText'])
 
         if w['AvalancheProblems'] is not None:
+            if(w['AvalancheProblems'] is None):
+                print('Found None!')
             for p in w['AvalancheProblems']:
 
                 order = p['AvalancheProblemId']              # sort order of the avalanche problems in this forecast
@@ -979,7 +982,9 @@ def get_avalanche_warnings_deprecated(region_ids, from_date, to_date, lang_key=1
             lg.error("getForecastApi -> get_avalanche_warnings_deprecated: Exception at {0} of {1}".format(len(avalanche_warning_list) + exception_counter, len(warnings_as_json)))
             exception_counter += 1
         '''
-
+    print(vars(avalanche_danger_list[3]), '\n')
+    print(vars(avalanche_danger_list[4]), '\n')
+    print(vars(avalanche_danger_list[5]), '\n')
     return avalanche_danger_list
 
 

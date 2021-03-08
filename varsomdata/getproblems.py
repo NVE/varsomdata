@@ -142,12 +142,11 @@ def _map_warning_to_problem(warnings):
 
     for w in warnings:
 
-        region_id = w.region_id
+        region_id = w.region_regobs_id
         region_name = w.region_name
-        date = w.publish_time
+        date = w.date
 
         for p in w.avalanche_problems:
-
             order = p.avalanche_problem_id
             cause_name = p.aval_cause_name
             source = 'Forecast'
@@ -156,7 +155,7 @@ def _map_warning_to_problem(warnings):
             problem.set_regobs_table('AvalancheWarnProblem??')
             problem.set_regid(w.reg_id)
             problem.set_url('{0}{1}/{2}'.format(env.forecast_basestring, w.region_name, w.date_valid))
-            problem.set_registration_time(w.publish_time)
+            problem.set_registration_time(w.date)
             problem.set_nick_name(w.author)
 
             problem.set_cause_tid(p.aval_cause_id)
@@ -255,7 +254,7 @@ def get_all_problems(region_ids, from_date, to_date, add_danger_level=True, prob
         evaluations_2 = []
         eval_problems_2 = []
         warnings = gfa.get_avalanche_warnings_deprecated(region_ids=region_ids, from_date=from_date, to_date=to_date, lang_key=lang_key)
-
+        print(warnings[0])
     elif problems_from == 'Observation':
         evaluations_1 = go.get_avalanche_evaluation(region_ids=region_ids, from_date=from_date, to_date=to_date, lang_key=lang_key)
         evaluations_2 = go.get_avalanche_evaluation_2(region_ids=region_ids, from_date=from_date, to_date=to_date, lang_key=lang_key)
