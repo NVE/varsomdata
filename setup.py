@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(name     = 'varsomdata',
       author   = 'NVE',
@@ -7,10 +7,7 @@ setup(name     = 'varsomdata',
       version  = '1.0.0',
       license  = 'MIT',
       url      = 'https://github.com/NVE/varsomdata',
-
-      packages = ['utilities',
-                  'varsomdata',
-                  'varsomscripts'],
-
-      install_requires = ['numpy>1.12.0', 'pandas>1.0.0', 'matplotlib>3.0.0']
+      install_requires = ['numpy>1.12.0', 'pandas>1.0.0', 'matplotlib>3.0.0'],
+      packages = find_packages(),
+      include_package_data=True, # check MANIFEST.in for explicit rules
      )
