@@ -1,0 +1,5 @@
+include LICENSE.md README.md requirements.txt setup.py .gitignore
+exclude setenvironment.py
+
+prune output*
+prune resources*
