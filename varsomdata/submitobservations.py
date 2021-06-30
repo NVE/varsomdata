@@ -7,7 +7,7 @@ Modifications:
 from __future__ import annotations
 import requests
 from uuid import uuid4
-from enum import IntEnum
+from enum import IntEnum, Enum
 from typing import Optional
 import pprint
 import datetime as dt
@@ -67,7 +67,7 @@ class Connection:
             raise ApiError(reg_id.content)
         reg_id = reg_id.json()["RegId"]
 
-        returned_reg = self.session.get(f"{API}/Registration/{reg_id}/{int(language)}")
+        returned_reg = self.session.get(f"{API}/Registration/{reg_id}/{language}")
         if returned_reg.status_code != 200:
             raise ApiError(returned_reg.content)
         return returned_reg.json()
@@ -88,13 +88,9 @@ class SnowRegistration:
         ONE_KM = 1000
         OVER_KM = -1
 
-    def __init__(self, obs_time: dt.datetime, lat: float, lon: float,
+    def __init__(self, obs_time: dt.datetime, position: Position,
                  spatial_precision: Optional[SpatialPrecision] = None,
                  source: Optional[Source] = None):
-
-        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
-            raise SpatialError("Latitude must be in the range -90--90, longitude -180--180.")
-
         self.any_obs = False
         self.reg = {
             'AttachmentSummaries': [],
@@ -112,21 +108,52 @@ class SnowRegistration:
             'Id': str(uuid4()),
             'Incident': None,
             'ObsLocation': {
-                'Latitude': lat,
-                'Longitude': lon,
+                'Latitude': position.lat,
+                'Longitude': position.lon,
+                'Uncertainty': spatial_precision,
             },
+            'SourceTID': source,
             'SnowProfile2': None,
             'SnowSurfaceObservation': None,
             'WeatherObservation': None,
         }
-        if spatial_precision is not None:
-            self.reg['ObsLocation']['Uncertainty'] = int(spatial_precision)
-        if source is not None:
-            self.reg['SourceTID'] = int(source)
 
     def add_danger_sign(self, danger_sign: DangerSign) -> SnowRegistration:
         self.any_obs = True
         self.reg['DangerObs'].append(danger_sign.obs)
+        return self
+
+    def set_avalanche_obs(self, avalanche_obs: AvalancheObs) -> SnowRegistration:
+        self.any_obs = True
+        self.reg['AvalancheObs'] = avalanche_obs.obs
+        return self
+
+    def add_avalanche_activity(self, avalanche_activity: AvalancheActivity) -> SnowRegistration:
+        self.any_obs = True
+        self.reg['AvalancheActivityObs2'].append(avalanche_activity.obs)
+        return self
+
+    def set_weather(self, weather: Weather) -> SnowRegistration:
+        self.any_obs = True
+        self.reg["WeatherObservation"] = weather.obs
+        return self
+
+    def set_snow_cover(self, snow_cover: SnowCover) -> SnowRegistration:
+        self.any_obs = True
+        self.reg["SnowSurfaceObservation"] = snow_cover.obs
+        return self
+
+    # Tests
+
+    # Snow Profile
+
+    # Avalanche Problems
+
+    # Avalanche Danger Assessment
+
+    def set_incident(self, incident: Incident) -> SnowRegistration:
+        self.any_obs = True
+        self.reg['Incident'] = incident.obs
         return self
 
     def set_note(self, note: Note) -> SnowRegistration:
@@ -135,7 +162,12 @@ class SnowRegistration:
         return self
 
 
-class DangerSign:
+class Observation:
+    def __init__(self, obs):
+        self.obs = {k: v for k, v in obs.items() if v is not None}
+
+
+class DangerSign(Observation):
     class Sign(IntEnum):
         NO_SIGNS = 1
         RECENT_AVALANCHES = 2
@@ -147,29 +179,395 @@ class DangerSign:
         RECENT_SNOWDRIFT = 9
         OTHER = 99
 
-    def __init__(self, sign: Sign, comment: Optional[str] = None):
-        self.obs = {
-            'DangerSignTID': int(sign),
+    def __init__(self,
+                 sign: Optional[Sign] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in [sign, comment]):
+            raise NoObservationError("No argument passed to danger sign observation.")
+
+        obs = {
+            'DangerSignTID': sign if sign is not None else 0,
+            'Comment': comment,
         }
-        if comment is not None:
-            self.obs['Comment'] = comment
-        print(self.obs)
+        super().__init__(obs)
 
 
-class Note:
+class AvalancheObs(Observation):
+    class Type(IntEnum):
+        DRY_LOOSE = 12
+        WET_LOOSE = 11
+        DRY_SLAB = 22
+        WET_SLAB = 21
+        GLIDE = 27
+        SLUSH_FLOW = 30
+        CORNICE = 40
+        UNKNOWN = 99
+
+    class Trigger(IntEnum):
+        NATURAL = 10
+        HUMAN = 26
+        SNOWMOBILE = 27
+        REMOTE = 22
+        TEST_SLOPE = 23
+        EXPLOSIVES = 25
+        UNKNOWN = 99
+
+    class Terrain(IntEnum):
+        STEEP_SLOPE = 10
+        LEE_SIDE = 20
+        CLOSE_TO_RIDGE = 30
+        GULLY = 40
+        SLAB = 50
+        BOWL = 60
+        FOREST = 70
+        LOGGING_AREA = 75
+        EVERYWHERE = 95
+        UNKNOWN = 99
+
+    class WeakLayer(IntEnum):
+        PP = 10
+        SH = 11
+        FC_NEAR_SURFACE = 13
+        BONDING_ABOVE_MFCR = 14
+        DF = 15
+        DH = 16
+        FC_BELOW_MFCR = 19
+        FC_ABOVE_MFCR = 18
+        WATER_IN_SNOW = 22
+        GROUND_MELT = 20
+        LOOSE_SNOW = 24
+
+    def __init__(self, release_time: dt.datetime,
+                 start: Optional[Position] = None,
+                 stop: Optional[Position] = None,
+                 exposition: Optional[Direction] = None,
+                 size: Optional[DestructiveSize] = None,
+                 avalanche_type: Optional[Type] = None,
+                 trigger: Optional[Trigger] = None,
+                 terrain: Optional[Terrain] = None,
+                 weak_layer: Optional[WeakLayer] = None,
+                 fracture_height_cm: Optional[int] = None,
+                 fracture_width: Optional[int] = None,
+                 path_name: Optional[str] = None,
+                 comment: Optional[str] = None,
+                 ):
+        obs = {
+            'AvalCauseTID': weak_layer,
+            'AvalancheTID': avalanche_type,
+            'AvalancheTriggerTID': trigger,
+            'Comment': comment,
+            'DestructiveSizeTID': size,
+            'DtAvalancheTime': release_time.isoformat(),
+            'FractureHeight': fracture_height_cm,
+            'FractureWidth': fracture_width,
+            'StartLat': start.lat if start is not None else None,
+            'StartLong': start.lon if start is not None else None,
+            'StopLat': stop.lat if stop is not None else None,
+            'StopLong': stop.lon if stop is not None else None,
+            'TerrainStartZoneTID': terrain,
+            'Trajectory': path_name,
+            'ValidExposition': Expositions([exposition]).exp if exposition is not None else None,
+        }
+        super().__init__(obs)
+
+
+class AvalancheActivity(Observation):
+    class Timeframe(Enum):
+        ZERO_TO_SIX = '0-6'
+        SIX_TO_TWELVE = '6-12'
+        TWELVE_TO_EIGHTEEN = '12-18'
+        EIGHTEEN_TO_TWENTY_FOUR = '18-24'
+
+    class Quantity(IntEnum):
+        NO_ACTIVITY = 1
+        ONE = 2
+        FEW = 3
+        SEVERAL = 4
+        NUMEROUS = 5
+
+    class Type(IntEnum):
+        DRY_LOOSE = 10
+        WET_LOOSE = 15
+        DRY_SLAB = 20
+        WET_SLAB = 25
+        GLIDE = 27
+        SLUSH_FLOW = 30
+        CORNICE = 40
+
+    class Sensitivity(IntEnum):
+        VERY_DIFFICULT = 30
+        DIFFICULT = 40
+        EASY = 50
+        VERY_EASY = 60
+        SPONTANEOUS = 22
+
+    class Distribution(IntEnum):
+        ISOLATED = 1
+        SPECIFIC = 2
+        WIDESPREAD = 3
+
+    def __init__(self, date: dt.date,
+                 timeframe: Optional[Timeframe] = None,
+                 quantity: Optional[Quantity] = None,
+                 avalanche_type: Optional[Type] = None,
+                 sensitivity: Optional[Sensitivity] = None,
+                 size: Optional[DestructiveSize] = None,
+                 distribution: Optional[Distribution] = None,
+                 elevation: Optional[Elevation] = None,
+                 expositions: Optional[Expositions] = None,
+                 comment: Optional[str] = None):
+        avalanche_attributes = [quantity, avalanche_type, sensitivity, size, distribution, elevation, expositions]
+        if quantity == self.Quantity.NO_ACTIVITY and any(e is not None for e in avalanche_attributes):
+            raise NoObservationError("Avalanche attributes specified, but no avalanche activity reported.")
+
+        timeframe_times = {
+            None: {'start': dt.time(0), 'end': dt.time(23, 59)},
+            '0-6': {'start': dt.time(0), 'end': dt.time(6)},
+            '6-12': {'start': dt.time(6), 'end': dt.time(12)},
+            '12-18': {'start': dt.time(12), 'end': dt.time(18)},
+            '18-24': {'start': dt.time(18), 'end': dt.time(23, 59)},
+        }[timeframe.value if timeframe is not None else None]
+        start = TZ.localize(dt.datetime.combine(date, timeframe_times['start']))
+        end = TZ.localize(dt.datetime.combine(date, timeframe_times['end']))
+
+        obs = {
+            'AvalPropagationTID': distribution,
+            'AvalTriggerSimpleTID': sensitivity,
+            'AvalancheExtTID': avalanche_type,
+            'Comment': comment,
+            'DestructiveSizeTID': size,
+            'DtEnd': end.isoformat(),
+            'DtStart': start.isoformat(),
+            'EstimatedNumTID': quantity,
+            'ValidExposition': expositions.exp,
+        }
+        if elevation is not None:
+            obs = {**obs, **elevation.elev}
+        super().__init__(obs)
+
+
+class Weather(Observation):
+    class Precipitation(IntEnum):
+        NO_PRECIPITATION = 1
+        DRIZZLE = 2
+        RAIN = 3
+        SLEET = 4
+        SNOW = 5
+        HAIL = 6
+        FREEZING_RAIN = 8
+
+    def __init__(self,
+                 precipitation: Optional[Precipitation] = None,
+                 wind_dir: Optional[Direction] = None,
+                 air_temp: Optional[float] = None,
+                 wind_speed: Optional[float] = None,
+                 cloud_cover: Optional[int] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in [precipitation, air_temp, wind_speed, cloud_cover, wind_dir, comment]):
+            raise NoObservationError("No argument passed to weather observation.")
+        if cloud_cover is not None and not (0 <= cloud_cover <= 100):
+            raise PercentError("Percentage must be within the range 0--100.")
+
+        obs = {
+            'AirTemperature': air_temp,
+            'CloudCover': cloud_cover,
+            'Comment': comment,
+            'PrecipitationTID': precipitation,
+            'WindDirection': wind_dir * 45 if wind_dir is not None else None,
+            'WindSpeed': wind_speed
+        }
+        super().__init__(obs)
+
+
+class SnowCover(Observation):
+    class Drift(IntEnum):
+        NO_DRIFT = 1
+        SOME = 2
+        MODERATE = 3
+        HEAVY = 4
+
+    class Surface(IntEnum):
+        LOOSE_OVER_30_CM = 101
+        LOOSE_10_TO_30_CM = 102
+        LOOSE_1_TO_10_CM = 103
+        SURFACE_HOAR_HARD = 61
+        SURFACE_HOAR_SOFT = 62
+        NEW_SURFACE_FACETS = 50
+        CRUST = 107
+        WIND_SLAB_HARD = 105
+        STORM_SLAB_SOFT = 106
+        WET_LOOSE = 104
+        OTHER = 108
+
+    class Moisture(IntEnum):
+        NO_SNOW = 1
+        DRY = 2
+        MOIST = 3
+        WET = 4
+        VERY_WET = 5
+        SLUSH = 6
+
+    def __init__(self,
+                 drift: Optional[Drift] = None,
+                 surface: Optional[Surface] = None,
+                 moisture: Optional[Moisture] = None,
+                 hn24_cm: Optional[float] = None,
+                 new_snow_line: Optional[int] = None,
+                 hs_cm: Optional[float] = None,
+                 snow_line: Optional[int] = None,
+                 layered_snow_line: Optional[float] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in
+               [drift, surface, moisture, hn24_cm, new_snow_line, hs_cm, snow_line, layered_snow_line, comment]):
+            raise NoObservationError("No argument passed to snow cover observation.")
+
+        obs = {
+            'Comment': comment,
+            'HeightLimitLayeredSnow': layered_snow_line,
+            'NewSnowDepth24': hn24_cm / 100 if hn24_cm is not None else None,
+            'NewSnowLine': new_snow_line,
+            'SnowDepth': hs_cm / 100 if hs_cm is not None else None,
+            'SnowDriftTID': drift,
+            'SnowLine': snow_line,
+            'SnowSurfaceTID': surface,
+            'SurfaceWaterContentTID': moisture,
+        }
+        super().__init__(obs)
+
+
+class Incident(Observation):
+    class Activity(IntEnum):
+        BACKCOUNTRY = 111
+        OFF_PISTE = 113
+        RESORT = 112
+        NORDIC = 114
+        CROSS_COUNTRY = 115
+        CLIMBING = 116
+        FOOT = 117
+        SNOWMOBILE = 130
+        ROAD = 120
+        RAILWAY = 140
+        BUILDING = 160
+        OTHER = 190
+
+    class Extent(IntEnum):
+        NO_EFFECT = 10
+        SAR = 13
+        TRAFFIC = 15
+        EVACUATION = 25
+        MATERIAL_ONLY = 20
+        CLOSE_CALL = 27
+        BURIAL_UNHARMED = 28
+        PEOPLE_HURT = 30
+        FATAL = 40
+        OTHER = 99
+
+    def __init__(self,
+                 activity: Optional[Activity] = None,
+                 extent: Optional[Extent] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in [activity, extent, comment]):
+            raise NoObservationError("No argument passed to incident observation.")
+
+        obs = {
+            'ActivityInfluencedTID': activity,
+            'Comment': comment,
+            'DamageExtentTID': extent,
+            'IncidentURLs': [],
+        }
+        super().__init__(obs)
+
+    def add_url(self, url: Url) -> Incident:
+        self.obs['IncidentURLs'].append(url.url)
+        return self
+
+
+class Note(Observation):
     def __init__(self, comment: str):
-        self.obs = {
+        obs = {
             'ObsComment': comment,
             'Urls': [],
         }
+        super().__init__(obs)
 
-    def add_url(self, url: str, description: str) -> Note:
-        annotated_url = {
+    def add_url(self, url: Url) -> Note:
+        self.obs['Urls'].append(url.url)
+        return self
+
+
+class Url:
+    def __init__(self, url: str, description: str):
+        self.url = {
             'UrlDescription': description,
             'UrlLine': url,
         }
-        self.obs['Urls'].append(annotated_url)
-        return self
+
+
+class DestructiveSize(IntEnum):
+    D1 = 1
+    D2 = 2
+    D3 = 3
+    D4 = 4
+    D5 = 5
+    UNKNOWN = 9
+
+
+class Position:
+    def __init__(self, lat: float, lon: float):
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            raise SpatialError("Latitude must be in the range -90--90, longitude -180--180.")
+
+        self.lat = lat
+        self.lon = lon
+
+
+class Elevation:
+    class Format(IntEnum):
+        ABOVE = 1
+        BELOW = 2
+        SANDWICH = 3
+        MIDDLE = 4
+
+    def __init__(self, elev_fmt: Format, elev: int,
+                 elev_secondary: Optional[int] = None):
+        if not (0 <= elev <= 2500) or (elev_secondary is not None and not (0 <= elev_secondary <= 2500)):
+            raise ElevationError("Elevations must be in the range 0--2500 m.a.s.l.")
+        if (elev_fmt == self.Format.ABOVE or elev_fmt == self.Format.BELOW) and elev_secondary is not None:
+            raise ElevationError("ABOVE and BELOW elevation formats does not use parameter elev_secondary.")
+        elif (elev_fmt == self.Format.SANDWICH or elev_fmt == self.Format.MIDDLE) and elev_secondary is None:
+            raise ElevationError("SANDWICH and MIDDLE elevation formats must use parameter elev_secondary.")
+
+        if elev_secondary is not None:
+            elev_max = round(max(elev, elev), -2)
+            elev_min = round(min(elev, elev_secondary), -2)
+            elev_min -= 100 if elev_max == elev_min else 0
+        else:
+            elev_max = elev
+            elev_min = None
+
+        self.elev = {
+            'ExposedHeightComboTID': elev_fmt,
+            'ExposedHeight1': elev_max,
+            'ExposedHeight2': elev_min,
+        }
+
+
+class Expositions:
+    def __init__(self, expositions: [Direction]):
+        self.exp = "00000000"
+        for exposition in expositions:
+            self.exp = self.exp[:exposition] + "1" + self.exp[exposition + 1:]
+
+
+class Direction(IntEnum):
+    N = 0
+    NE = 1
+    E = 2
+    SE = 3
+    S = 4
+    SW = 5
+    W = 6
+    NW = 7
 
 
 class Error(Exception):
@@ -192,21 +590,73 @@ class SpatialError(Error):
     pass
 
 
+class ElevationError(Error):
+    pass
+
+
+class PercentError(Error):
+    pass
+
+
 class MissingArgumentError(Error):
     pass
 
 
 if __name__ == "__main__":
-    observation_time = TZ.localize(dt.datetime(2021, 6, 16, 10, 15, 0, 0))
-    latitude = 68.4293
-    longitude = 18.2572
+    reg = SnowRegistration(TZ.localize(dt.datetime(2021, 6, 16, 10, 15)),
+                           Position(lat=68.4293, lon=18.2572),
+                           SnowRegistration.SpatialPrecision.ONE_HUNDRED,
+                           SnowRegistration.Source.SEEN)
 
-    reg = SnowRegistration(observation_time, latitude, longitude,
-                           spatial_precision=SnowRegistration.SpatialPrecision.ONE_HUNDRED,
-                           source=SnowRegistration.Source.SEEN)
     reg.add_danger_sign(DangerSign(DangerSign.Sign.WHUMPF_SOUND))
     reg.add_danger_sign(DangerSign(DangerSign.Sign.QUICK_TEMP_CHANGE, "Very quick!"))
-    reg.set_note(Note("Demo registration via Python client API.").add_url("https://varsom.no", "Varsom"))
+    reg.add_danger_sign(DangerSign(comment="It just felt dangerous."))
+
+    reg.set_avalanche_obs(AvalancheObs(TZ.localize(dt.datetime(2021, 3, 21, 16, 5)),
+                                       Position(lat=61.1955, lon=10.3711),
+                                       Position(lat=60.8071, lon=7.9102),
+                                       Direction.NE,
+                                       DestructiveSize.D3,
+                                       AvalancheObs.Type.DRY_SLAB,
+                                       AvalancheObs.Trigger.NATURAL,
+                                       AvalancheObs.Terrain.CLOSE_TO_RIDGE,
+                                       AvalancheObs.WeakLayer.GROUND_MELT,
+                                       fracture_height_cm=225,
+                                       fracture_width=700,
+                                       path_name="Path A",
+                                       comment="Extremely long path."))
+
+    reg.add_avalanche_activity(AvalancheActivity(dt.date(2021, 2, 25),
+                                                 AvalancheActivity.Timeframe.SIX_TO_TWELVE,
+                                                 AvalancheActivity.Quantity.FEW,
+                                                 AvalancheActivity.Type.DRY_SLAB,
+                                                 AvalancheActivity.Sensitivity.SPONTANEOUS,
+                                                 DestructiveSize.D4,
+                                                 AvalancheActivity.Distribution.SPECIFIC,
+                                                 Elevation(Elevation.Format.ABOVE, 500),
+                                                 Expositions([Direction.NE, Direction.S]),
+                                                 "Avalanche activity above 500 masl"))
+
+    reg.set_weather(Weather(Weather.Precipitation.DRIZZLE,
+                            Direction.NE,
+                            wind_speed=2.2,
+                            cloud_cover=15))
+
+    reg.set_snow_cover(SnowCover(SnowCover.Drift.MODERATE,
+                                 SnowCover.Surface.WIND_SLAB_HARD,
+                                 hn24_cm=9.2,
+                                 new_snow_line=101,
+                                 hs_cm=243.7,
+                                 snow_line=2300,
+                                 layered_snow_line=203.6))
+
+    reg.set_incident(Incident(Incident.Activity.CLIMBING,
+                              Incident.Extent.CLOSE_CALL,
+                              "Scary."
+                              ).add_url(Url("https://nve.no", "NVE")))
+
+    reg.set_note(Note("Demo registration via Python client API."
+                      ).add_url(Url("https://varsom.no", "Varsom")))
 
     stored_reg = Connection(USERNAME, PASSWORD).submit(reg, Connection.Language.ENGLISH)
     pprint.pprint(stored_reg)
