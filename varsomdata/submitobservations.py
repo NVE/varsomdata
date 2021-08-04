@@ -6,7 +6,6 @@ Modifications:
 
 from __future__ import annotations
 import requests
-from uuid import uuid4
 from enum import IntEnum, Enum
 from typing import Optional
 import pprint
@@ -15,11 +14,12 @@ import pytz
 
 __author__ = 'arwi'
 
-API = "https://test-api.regobs.no/v4"
+API = "https://test-api.regobs.no/v5"
 TZ = pytz.timezone("Europe/Oslo")
 TOKEN = "REPLACEME"
 USERNAME = "REPLACEME"
 PASSWORD = "REPLACEME"
+EXPIRES_IN = 3600
 
 
 class Connection:
@@ -27,24 +27,28 @@ class Connection:
         NORWEGIAN = 1
         ENGLISH = 2
 
-    def __init__(self, username, password):
+    def __init__(self, username: str, password: str, token: str):
         self.expires = None
         self.session = None
         self.guid = None
         self.username = username
         self.password = password
+        self.token = token
         self.authenticate()
 
     def authenticate(self) -> Connection:
-        login = requests.post(f"{API}/Token/Get", json={"username": self.username, "password": self.password})
-        if login.status_code != 200:
-            raise AuthError(login.content)
-        login = login.json()
-
-        headers = {"Authorization": f"Bearer {login['Access_token']}", "regObs_apptoken": TOKEN}
-        self.expires = TZ.localize(dt.datetime.now()) + dt.timedelta(seconds=int(login["Expires_in"]))
+        headers = {"regObs_apptoken": self.token}
         self.session = requests.Session()
         self.session.headers.update(headers)
+
+        login = self.session.post(f"{API}/Account/Token", json={"username": self.username, "password": self.password})
+        if login.status_code != 200:
+            raise AuthError(login.content)
+        token = login.json()
+
+        headers["Authorization"] = f"Bearer {token}"
+        self.session.headers.update(headers)
+        self.expires = TZ.localize(dt.datetime.now()) + dt.timedelta(seconds=EXPIRES_IN)
 
         guid = self.session.get(f"{API}/Account/Mypage")
         if guid.status_code != 200:
@@ -59,10 +63,11 @@ class Connection:
         if not registration.any_obs:
             raise NoObservationError("No observation in registration.")
 
-        if registration.reg["ObserverGuid"] is None:
-            registration.reg["ObserverGuid"] = str(self.guid)
+        #if registration.reg["ObserverGuid"] is None:
+        #    registration.reg["ObserverGuid"] = str(self.guid)
 
-        reg_id = self.session.post(f"{API}/Registration", json=registration.reg)
+        reg_filtered = {k: v for k, v in registration.reg.items() if v}
+        reg_id = self.session.post(f"{API}/Registration", json=reg_filtered)
         if reg_id.status_code != 200:
             raise ApiError(reg_id.content)
         reg_id = reg_id.json()["RegId"]
@@ -104,8 +109,8 @@ class SnowRegistration:
             'DtObsTime': obs_time.isoformat(),
             'GeneralObservation': None,
             'GeoHazardTID': 10,
-            'ObserverGuid': None,
-            'Id': str(uuid4()),
+            #'ObserverGuid': None,
+            #'Id': str(uuid4()),
             'Incident': None,
             'ObsLocation': {
                 'Latitude': position.lat,
@@ -658,5 +663,5 @@ if __name__ == "__main__":
     reg.set_note(Note("Demo registration via Python client API."
                       ).add_url(Url("https://varsom.no", "Varsom")))
 
-    stored_reg = Connection(USERNAME, PASSWORD).submit(reg, Connection.Language.ENGLISH)
+    stored_reg = Connection(USERNAME, PASSWORD, TOKEN).submit(reg, Connection.Language.ENGLISH)
     pprint.pprint(stored_reg)
