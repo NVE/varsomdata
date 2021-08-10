@@ -152,9 +152,15 @@ class SnowRegistration:
 
     # Snow Profile
 
-    # Avalanche Problems
+    def add_avalanche_problem(self, avalanche_problem: AvalancheProblem):
+        self.any_obs = True
+        self.reg["AvalancheEvalProblem2"].append(avalanche_problem.obs)
+        return self
 
-    # Avalanche Danger Assessment
+    def set_danger_assessment(self, danger_assessment: DangerAssessment):
+        self.any_obs = True
+        self.reg["AvalancheEvaluation3"] = danger_assessment.obs
+        return self
 
     def set_incident(self, incident: Incident) -> SnowRegistration:
         self.any_obs = True
@@ -229,19 +235,6 @@ class AvalancheObs(Observation):
         EVERYWHERE = 95
         UNKNOWN = 99
 
-    class WeakLayer(IntEnum):
-        PP = 10
-        SH = 11
-        FC_NEAR_SURFACE = 13
-        BONDING_ABOVE_MFCR = 14
-        DF = 15
-        DH = 16
-        FC_BELOW_MFCR = 19
-        FC_ABOVE_MFCR = 18
-        WATER_IN_SNOW = 22
-        GROUND_MELT = 20
-        LOOSE_SNOW = 24
-
     def __init__(self, release_time: dt.datetime,
                  start: Optional[Position] = None,
                  stop: Optional[Position] = None,
@@ -298,18 +291,6 @@ class AvalancheActivity(Observation):
         GLIDE = 27
         SLUSH_FLOW = 30
         CORNICE = 40
-
-    class Sensitivity(IntEnum):
-        VERY_DIFFICULT = 30
-        DIFFICULT = 40
-        EASY = 50
-        VERY_EASY = 60
-        SPONTANEOUS = 22
-
-    class Distribution(IntEnum):
-        ISOLATED = 1
-        SPECIFIC = 2
-        WIDESPREAD = 3
 
     def __init__(self, date: dt.date,
                  timeframe: Optional[Timeframe] = None,
@@ -440,6 +421,88 @@ class SnowCover(Observation):
         super().__init__(obs)
 
 
+class AvalancheProblem(Observation):
+    class LayerDepth(IntEnum):
+        LESS_THAN_50_CM = 1
+        LESS_THAN_100_CM = 2
+        MORE_THAN_100_CM = 3
+
+    class Type(IntEnum):
+        DRY_LOOSE = 10
+        WET_LOOSE = 15
+        DRY_SLAB = 20
+        WET_SLAB = 25
+
+    def __init__(self,
+                 weak_layer: Optional[WeakLayer] = None,
+                 layer_depth: Optional[LayerDepth] = None,
+                 avalanche_type: Optional[Type] = None,
+                 sensitivity: Optional[Sensitivity] = None,
+                 size: Optional[DestructiveSize] = None,
+                 distribution: Optional[Distribution] = None,
+                 elevation: Optional[Elevation] = None,
+                 expositions: Optional[Expositions] = None,
+                 is_easy_propagation: Optional[bool] = None,
+                 is_layer_thin: Optional[bool] = None,
+                 is_soft_slab_above: Optional[bool] = None,
+                 is_large_crystals: Optional[bool] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in
+               [weak_layer, layer_depth, avalanche_type, sensitivity, size, distribution, elevation, expositions,
+                is_easy_propagation, is_layer_thin, is_soft_slab_above, is_large_crystals, comment]):
+            raise NoObservationError("No argument passed to avalanche problem assessment.")
+
+        obs = {
+            'AvalCauseTID': weak_layer,
+            'AvalCauseDepthTID': layer_depth,
+            'AvalCauseAttributeLightTID': 1 if is_easy_propagation else None,
+            'AvalCauseAttributeThinTID': 2 if is_layer_thin else None,
+            'AvalCauseAttributeSoftTID': 4 if is_soft_slab_above else None,
+            'AvalCauseAttributeCrystalTID': 8 if is_large_crystals else None,
+            'AvalancheExtTID': avalanche_type,
+            'AvalTriggerSimpleTID': sensitivity,
+            'DestructiveSizeTID': size,
+            'AvalPropagationTID': distribution,
+            'Comment': comment,
+            'ValidExposition': expositions.exp,
+        }
+        if elevation is not None:
+            obs = {**obs, **elevation.elev}
+        super().__init__(obs)
+
+
+class DangerAssessment(Observation):
+    class DangerLevel(IntEnum):
+        ONE_LOW = 1
+        TWO_MODERATE = 2
+        THREE_CONSIDERABLE = 3
+        FOUR_HIGH = 4
+        FIVE_EXTREME = 5
+
+    class ForecastEvaluation(IntEnum):
+        CORRECT = 1
+        TOO_LOW = 2
+        TOO_HIGH = 3
+
+    def __init__(self,
+                 danger_level: Optional[DangerLevel] = None,
+                 forecast_evaluation: Optional[ForecastEvaluation] = None,
+                 danger_assessment: Optional[str] = None,
+                 danger_development: Optional[str] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in [danger_level, forecast_evaluation, danger_assessment, danger_development, comment]):
+            raise NoObservationError("No argument passed to avalanche danger assessment.")
+
+        obs = {
+            'AvalancheDangerTID': danger_level,
+            'ForecastCorrectTID': forecast_evaluation,
+            'AvalancheEvaluation': danger_assessment,
+            'AvalancheDevelopment': danger_development,
+            'ForecastComment': comment,
+        }
+        super().__init__(obs)
+
+
 class Incident(Observation):
     class Activity(IntEnum):
         BACKCOUNTRY = 111
@@ -515,6 +578,34 @@ class DestructiveSize(IntEnum):
     D4 = 4
     D5 = 5
     UNKNOWN = 9
+
+
+class Sensitivity(IntEnum):
+    VERY_DIFFICULT = 30
+    DIFFICULT = 40
+    EASY = 50
+    VERY_EASY = 60
+    SPONTANEOUS = 22
+
+
+class Distribution(IntEnum):
+    ISOLATED = 1
+    SPECIFIC = 2
+    WIDESPREAD = 3
+
+
+class WeakLayer(IntEnum):
+    PP = 10
+    SH = 11
+    FC_NEAR_SURFACE = 13
+    BONDING_ABOVE_MFCR = 14
+    DF = 15
+    DH = 16
+    FC_BELOW_MFCR = 19
+    FC_ABOVE_MFCR = 18
+    WATER_IN_SNOW = 22
+    GROUND_MELT = 20
+    LOOSE_SNOW = 24
 
 
 class Position:
@@ -625,7 +716,7 @@ if __name__ == "__main__":
                                        AvalancheObs.Type.DRY_SLAB,
                                        AvalancheObs.Trigger.NATURAL,
                                        AvalancheObs.Terrain.CLOSE_TO_RIDGE,
-                                       AvalancheObs.WeakLayer.GROUND_MELT,
+                                       WeakLayer.GROUND_MELT,
                                        fracture_height_cm=225,
                                        fracture_width=700,
                                        path_name="Path A",
@@ -635,9 +726,9 @@ if __name__ == "__main__":
                                                  AvalancheActivity.Timeframe.SIX_TO_TWELVE,
                                                  AvalancheActivity.Quantity.FEW,
                                                  AvalancheActivity.Type.DRY_SLAB,
-                                                 AvalancheActivity.Sensitivity.SPONTANEOUS,
+                                                 Sensitivity.SPONTANEOUS,
                                                  DestructiveSize.D4,
-                                                 AvalancheActivity.Distribution.SPECIFIC,
+                                                 Distribution.SPECIFIC,
                                                  Elevation(Elevation.Format.ABOVE, 500),
                                                  Expositions([Direction.NE, Direction.S]),
                                                  "Avalanche activity above 500 masl"))
@@ -654,6 +745,26 @@ if __name__ == "__main__":
                                  hs_cm=243.7,
                                  snow_line=2300,
                                  layered_snow_line=203.6))
+
+    reg.add_avalanche_problem(AvalancheProblem(WeakLayer.FC_ABOVE_MFCR,
+                              AvalancheProblem.LayerDepth.LESS_THAN_50_CM,
+                              AvalancheProblem.Type.DRY_SLAB,
+                              Sensitivity.VERY_EASY,
+                              DestructiveSize.D3,
+                              Distribution.SPECIFIC,
+                              Elevation(Elevation.Format.ABOVE, 500),
+                              Expositions([Direction.N, Direction.NE]),
+                              is_easy_propagation=True,
+                              is_layer_thin=True,
+                              is_soft_slab_above=False,
+                              is_large_crystals=False,
+                              comment="A sketchy persistent weak slab."))
+
+    reg.set_danger_assessment(DangerAssessment(DangerAssessment.DangerLevel.FOUR_HIGH,
+                                               DangerAssessment.ForecastEvaluation.TOO_LOW,
+                                               "It's very dangerous out there.",
+                                               "I hope tomorrow is better.",
+                                               "This is a comment."))
 
     reg.set_incident(Incident(Incident.Activity.CLIMBING,
                               Incident.Extent.CLOSE_CALL,
