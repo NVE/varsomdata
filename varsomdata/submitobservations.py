@@ -22,6 +22,28 @@ PASSWORD = "REPLACEME"
 EXPIRES_IN = 3600
 
 
+class FloatEnum(float, Enum):
+    """
+    Enum where members are also (and must be) floats
+    """
+
+    def __str__(self):
+        return "%s" % (self._name_, )
+
+    def __format__(self, format_spec):
+        """
+        Returns format using actual value unless __str__ has been overridden.
+        """
+        str_overridden = type(self).__str__ != FloatEnum.__str__
+        if str_overridden:
+            cls = str
+            val = str(self)
+        else:
+            cls = self._member_type_
+            val = self._value_
+        return cls.__format__(val, format_spec)
+
+
 class Connection:
     class Language(IntEnum):
         NORWEGIAN = 1
@@ -93,9 +115,11 @@ class SnowRegistration:
         ONE_KM = 1000
         OVER_KM = -1
 
-    def __init__(self, obs_time: dt.datetime, position: Position,
-                 spatial_precision: Optional[SpatialPrecision] = None,
-                 source: Optional[Source] = None):
+    def __init__(self,
+                 obs_time: dt.datetime,
+                 position: Position,
+                 spatial_precision: Optional[SnowRegistration.SpatialPrecision] = None,
+                 source: Optional[SnowRegistration.Source] = None):
         self.any_obs = False
         self.reg = {
             'AttachmentSummaries': [],
@@ -109,8 +133,6 @@ class SnowRegistration:
             'DtObsTime': obs_time.isoformat(),
             'GeneralObservation': None,
             'GeoHazardTID': 10,
-            #'ObserverGuid': None,
-            #'Id': str(uuid4()),
             'Incident': None,
             'ObsLocation': {
                 'Latitude': position.lat,
@@ -148,9 +170,15 @@ class SnowRegistration:
         self.reg["SnowSurfaceObservation"] = snow_cover.obs
         return self
 
-    # Tests
+    def add_compression_test(self, compression_test: CompressionTest):
+        self.any_obs = True
+        self.reg["CompressionTest"].append(compression_test.obs)
+        return self
 
-    # Snow Profile
+    def set_snow_profile(self, snow_profile: SnowProfile):
+        self.any_obs = True
+        self.reg["SnowProfile2"] = snow_profile.obs
+        return self
 
     def add_avalanche_problem(self, avalanche_problem: AvalancheProblem):
         self.any_obs = True
@@ -191,7 +219,7 @@ class DangerSign(Observation):
         OTHER = 99
 
     def __init__(self,
-                 sign: Optional[Sign] = None,
+                 sign: Optional[DangerSign.Sign] = None,
                  comment: Optional[str] = None):
         if all(e is None for e in [sign, comment]):
             raise NoObservationError("No argument passed to danger sign observation.")
@@ -240,9 +268,9 @@ class AvalancheObs(Observation):
                  stop: Optional[Position] = None,
                  exposition: Optional[Direction] = None,
                  size: Optional[DestructiveSize] = None,
-                 avalanche_type: Optional[Type] = None,
-                 trigger: Optional[Trigger] = None,
-                 terrain: Optional[Terrain] = None,
+                 avalanche_type: Optional[AvalancheObs.Type] = None,
+                 trigger: Optional[AvalancheObs.Trigger] = None,
+                 terrain: Optional[AvalancheObs.Terrain] = None,
                  weak_layer: Optional[WeakLayer] = None,
                  fracture_height_cm: Optional[int] = None,
                  fracture_width: Optional[int] = None,
@@ -256,8 +284,8 @@ class AvalancheObs(Observation):
             'Comment': comment,
             'DestructiveSizeTID': size,
             'DtAvalancheTime': release_time.isoformat(),
-            'FractureHeight': fracture_height_cm,
-            'FractureWidth': fracture_width,
+            'FractureHeight': round(fracture_height_cm),
+            'FractureWidth': round(fracture_width),
             'StartLat': start.lat if start is not None else None,
             'StartLong': start.lon if start is not None else None,
             'StopLat': stop.lat if stop is not None else None,
@@ -347,16 +375,16 @@ class Weather(Observation):
                  wind_dir: Optional[Direction] = None,
                  air_temp: Optional[float] = None,
                  wind_speed: Optional[float] = None,
-                 cloud_cover: Optional[int] = None,
+                 cloud_cover_percent: Optional[int] = None,
                  comment: Optional[str] = None):
-        if all(e is None for e in [precipitation, air_temp, wind_speed, cloud_cover, wind_dir, comment]):
+        if all(e is None for e in [precipitation, air_temp, wind_speed, cloud_cover_percent, wind_dir, comment]):
             raise NoObservationError("No argument passed to weather observation.")
-        if cloud_cover is not None and not (0 <= cloud_cover <= 100):
+        if cloud_cover_percent is not None and not (0 <= cloud_cover_percent <= 100):
             raise PercentError("Percentage must be within the range 0--100.")
 
         obs = {
             'AirTemperature': air_temp,
-            'CloudCover': cloud_cover,
+            'CloudCover': round(cloud_cover_percent) if cloud_cover_percent is not None else None,
             'Comment': comment,
             'PrecipitationTID': precipitation,
             'WindDirection': wind_dir * 45 if wind_dir is not None else None,
@@ -411,12 +439,251 @@ class SnowCover(Observation):
             'Comment': comment,
             'HeightLimitLayeredSnow': layered_snow_line,
             'NewSnowDepth24': hn24_cm / 100 if hn24_cm is not None else None,
-            'NewSnowLine': new_snow_line,
+            'NewSnowLine': round(new_snow_line),
             'SnowDepth': hs_cm / 100 if hs_cm is not None else None,
             'SnowDriftTID': drift,
-            'SnowLine': snow_line,
+            'SnowLine': round(snow_line),
             'SnowSurfaceTID': surface,
             'SurfaceWaterContentTID': moisture,
+        }
+        super().__init__(obs)
+
+
+class CompressionTest(Observation):
+    class TestResult(IntEnum):
+        ECTPV = 21
+        ECTP = 22
+        ECTN = 23
+        ECTX = 24
+        LBT = 5
+        CTV = 11
+        CTE = 12
+        CTM = 13
+        CTH = 14
+        CTN = 15
+
+    class FractureQuality(IntEnum):
+        Q1 = 1
+        Q2 = 2
+        Q3 = 3
+
+    class Stability(IntEnum):
+        GOOD = 1
+        MEDIUM = 2
+        POOR = 3
+
+    def __init__(self,
+                 test_result: Optional[TestResult] = None,
+                 fracture_quality: Optional[FractureQuality] = None,
+                 stability: Optional[Stability] = None,
+                 number_of_taps: Optional[int] = None,
+                 fracture_depth_cm: Optional[float] = None,
+                 is_in_profile: Optional[bool] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in [test_result, fracture_quality, stability, number_of_taps, fracture_depth_cm,
+                                   is_in_profile, comment]):
+            raise NoObservationError("No argument passed to compression test.")
+
+        if number_of_taps is not None:
+            if not (0 < number_of_taps <= 30):
+                raise RangeError("Test taps must be in the range 1-30.")
+            if test_result in [self.TestResult.ECTPV, self.TestResult.ECTX, self.TestResult.LBT, self.TestResult.CTV,
+                               self.TestResult.CTN]:
+                raise InvalidArgumentError("Supplied test result must not have any number of taps.")
+
+        if fracture_depth_cm is not None and test_result in [self.TestResult.ECTX, self.TestResult.CTN]:
+            raise InvalidArgumentError("Supplied test result must not have any fracture depth.")
+
+        obs = {
+            'PropagationTID': test_result,
+            'ComprTestFractureTID': fracture_quality,
+            'StabilityEvalTID': stability,
+            'TapsFracture': round(number_of_taps),
+            'FractureDepth': fracture_depth_cm / 100 if fracture_depth_cm is not None else None,
+            'IncludeInSnowProfile': is_in_profile,
+            'Comment': comment,
+        }
+        super().__init__(obs)
+
+
+class SnowProfile(Observation):
+    class Hardness(IntEnum):
+        FIST_MINUS = 1
+        FIST = 2
+        FIST_PLUS = 3
+        FIST_TO_FOUR_FINGERS = 4
+        FOUR_FINGERS_MINUS = 5
+        FOUR_FINGERS = 6
+        FOUR_FINGERS_PLUS = 7
+        FOUR_FINGERS_TO_ONE_FINGER = 8
+        ONE_FINGER_MINUS = 9
+        ONE_FINGER = 10
+        ONE_FINGER_PLUS = 11
+        ONE_FINGER_TO_PEN = 12
+        PEN_MINUS = 13
+        PEN = 14
+        PEN_PLUS = 15
+        PEN_TO_KNIFE = 16
+        KNIFE_MINUS = 17
+        KNIFE = 18
+        KNIFE_PLUS = 19
+        KNIFE_TO_ICE = 20
+        ICE = 21
+
+    class GrainForm(IntEnum):
+        PP = 1
+        PP_CO = 2
+        PP_ND = 3
+        PP_PL = 4
+        PP_SD = 5
+        PP_IR = 6
+        PP_GP = 7
+        PP_HL = 8
+        PP_IP = 9
+        PP_RM = 10
+        MM = 11
+        MM_RP = 12
+        MM_CI = 13
+        DF = 14
+        DF_DC = 15
+        DF_BK = 16
+        RG = 17
+        RG_SR = 18
+        RG_LR = 19
+        RG_WP = 20
+        RG_XF = 21
+        FC = 22
+        FC_SO = 23
+        FC_SF = 24
+        FC_XR = 25
+        DH = 26
+        DH_CP = 27
+        DH_PR = 28
+        DH_CH = 29
+        DH_LA = 30
+        DH_XR = 31
+        SH = 32
+        SH_SU = 33
+        SH_CV = 34
+        SH_XR = 35
+        MF = 36
+        MF_CL = 37
+        MF_PC = 38
+        MF_SL = 29
+        MF_CR = 40
+        IF = 41
+        IF_IL = 42
+        IF_IC = 43
+        IF_BI = 44
+        IF_RC = 45
+        IF_SC = 46
+
+    class GrainSize(FloatEnum):
+        ZERO_POINT_ONE = 0.1
+        ZERO_POINT_THREE = 0.3
+        ZERO_POINT_FIVE = 0.3
+        ZERO_POINT_SEVEN = 0.3
+        ONE = 1.0
+        ONE_POINT_FIVE = 1.5
+        TWO = 2.0
+        TWO_POINT_FIVE = 2.5
+        THREE = 3.0
+        THREE_POINT_FIVE = 3.5
+        FIVE = 5
+        FIVE_POINT_FIVE = 5.5
+        SIX = 6.0
+        EIGHT = 8.0
+        TEN = 10.0
+
+    class Wetness(IntEnum):
+        D = 1
+        D_M = 2
+        M = 3
+        M_W = 4
+        W = 5
+        W_V = 6
+        V = 7
+        V_S = 8
+        S = 9
+
+    class CriticalLayer(IntEnum):
+        UPPER = 11
+        LOWER = 12
+        WHOLE = 13
+
+    class Layer:
+        def __init__(self,
+                     thickness_cm: float,
+                     hardness: SnowProfile.Hardness,
+                     grain_form_primary: Optional[SnowProfile.GrainForm] = None,
+                     grain_size_mm: Optional[SnowProfile.GrainSize] = None,
+                     wetness: Optional[SnowProfile.Wetness] = None,
+                     hardness_bottom: Optional[SnowProfile.Hardness] = None,
+                     grain_form_sec: Optional[SnowProfile.GrainForm] = None,
+                     grain_size_max_mm: Optional[SnowProfile.GrainSize] = None,
+                     critical_layer: Optional[SnowProfile.CriticalLayer] = None,
+                     comment: Optional[str] = None):
+            if thickness_cm < 0:
+                raise RangeError("Thickness must be larger than or equal to 0.")
+
+            self.layer = {
+                'Thickness': thickness_cm / 100,
+                'HardnessTID': hardness,
+                'GrainFormPrimaryTID': grain_form_primary,
+                'GrainSizeAvg': grain_size_mm / 100 if grain_size_mm is not None else None,
+                'WetnessTID': wetness,
+                'HardnessBottomTID': hardness_bottom,
+                'GrainFormSecondaryTID': grain_form_sec,
+                'GrainSizeAvgMax': grain_size_max_mm / 100 if grain_size_max_mm is not None else None,
+                'CriticalLayerTID': critical_layer,
+                'Comment': comment,
+            }
+
+    class SnowTemp:
+        def __init__(self,
+                     depth_cm: float,
+                     temp_c: float):
+            if temp_c > 0:
+                raise RangeError("Snow temperature must be lower than or equal to 0.")
+
+            self.temp = {
+                'Depth': depth_cm / 100,
+                'SnowTemp': temp_c,
+            }
+
+    class Density:
+        def __init__(self,
+                     thickness_cm: float,
+                     density_kg_per_cubic_metre: float):
+            if thickness_cm < 0:
+                raise RangeError("Thickness must be larger than or equal to 0.")
+
+            self.density = {
+                'Thickness': thickness_cm / 100,
+                'Density': density_kg_per_cubic_metre,
+            }
+
+    def __init__(self,
+                 layers: [Layer] = (),
+                 temperatures: [SnowTemp] = (),
+                 densities: [Density] = (),
+                 is_profile_to_ground: Optional[bool] = None,
+                 comment: Optional[str] = None):
+        if all(e is None for e in [layers, temperatures, densities, comment]):
+            raise NoObservationError("Neither layers, temperatures, densities or comment passed to snow profile.")
+
+        obs = {
+            'StratProfile': {
+                'Layers': list(map(lambda x: x.layer, layers)),
+            },
+            'SnowTemp': {
+                'Layers': list(map(lambda x: x.temp, temperatures)),
+            },
+            'SnowDensity': [{
+                'Layers': list(map(lambda x: x.density, densities)),
+            }] if len(densities) else [],
+            'IsProfileToGround': is_profile_to_ground,
+            'Comment': comment,
         }
         super().__init__(obs)
 
@@ -634,8 +901,8 @@ class Elevation:
             raise ElevationError("SANDWICH and MIDDLE elevation formats must use parameter elev_secondary.")
 
         if elev_secondary is not None:
-            elev_max = round(max(elev, elev), -2)
-            elev_min = round(min(elev, elev_secondary), -2)
+            elev_max = round(round(max(elev, elev), -2))
+            elev_min = round(round(min(elev, elev_secondary), -2))
             elev_min -= 100 if elev_max == elev_min else 0
         else:
             elev_max = elev
@@ -698,8 +965,16 @@ class MissingArgumentError(Error):
     pass
 
 
+class RangeError(Error):
+    pass
+
+
+class InvalidArgumentError(Error):
+    pass
+
+
 if __name__ == "__main__":
-    reg = SnowRegistration(TZ.localize(dt.datetime(2021, 6, 16, 10, 15)),
+    reg = SnowRegistration(TZ.localize(dt.datetime(2021, 8, 17, 9, 48)),
                            Position(lat=68.4293, lon=18.2572),
                            SnowRegistration.SpatialPrecision.ONE_HUNDRED,
                            SnowRegistration.Source.SEEN)
@@ -736,7 +1011,7 @@ if __name__ == "__main__":
     reg.set_weather(Weather(Weather.Precipitation.DRIZZLE,
                             Direction.NE,
                             wind_speed=2.2,
-                            cloud_cover=15))
+                            cloud_cover_percent=15))
 
     reg.set_snow_cover(SnowCover(SnowCover.Drift.MODERATE,
                                  SnowCover.Surface.WIND_SLAB_HARD,
@@ -746,19 +1021,59 @@ if __name__ == "__main__":
                                  snow_line=2300,
                                  layered_snow_line=203.6))
 
+    reg.add_compression_test(CompressionTest(CompressionTest.TestResult.ECTP,
+                                             CompressionTest.FractureQuality.Q1,
+                                             CompressionTest.Stability.POOR,
+                                             number_of_taps=3,
+                                             fracture_depth_cm=15.355,
+                                             is_in_profile=True,
+                                             comment="This is a comment."))
+
+    reg.add_compression_test(CompressionTest(CompressionTest.TestResult.ECTN,
+                                             CompressionTest.FractureQuality.Q3,
+                                             CompressionTest.Stability.GOOD,
+                                             number_of_taps=26,
+                                             fracture_depth_cm=55.54,
+                                             is_in_profile=False))
+
+    reg.set_snow_profile(SnowProfile((
+                                          SnowProfile.Layer(15,
+                                                            SnowProfile.Hardness.ONE_FINGER,
+                                                            SnowProfile.GrainForm.PP,
+                                                            SnowProfile.GrainSize.TWO,
+                                                            SnowProfile.Wetness.D,
+                                                            SnowProfile.Hardness.FOUR_FINGERS,
+                                                            SnowProfile.GrainForm.DF,
+                                                            SnowProfile.GrainSize.ONE),
+                                          SnowProfile.Layer(0.5,
+                                                            SnowProfile.Hardness.FIST,
+                                                            SnowProfile.GrainForm.SH,
+                                                            SnowProfile.GrainSize.FIVE,
+                                                            critical_layer=SnowProfile.CriticalLayer.WHOLE,
+                                                            comment="This is what I'm worried about"),
+                                          SnowProfile.Layer(2,
+                                                            SnowProfile.Hardness.ICE,
+                                                            SnowProfile.GrainForm.MF_CR)
+                                     ),
+                                     (SnowProfile.SnowTemp(10, -4),),
+                                     (SnowProfile.Density(50, 300),),
+                                     False,
+                                     "SH above MFcr. Very PWL. Much dangerous."
+    ))
+
     reg.add_avalanche_problem(AvalancheProblem(WeakLayer.FC_ABOVE_MFCR,
-                              AvalancheProblem.LayerDepth.LESS_THAN_50_CM,
-                              AvalancheProblem.Type.DRY_SLAB,
-                              Sensitivity.VERY_EASY,
-                              DestructiveSize.D3,
-                              Distribution.SPECIFIC,
-                              Elevation(Elevation.Format.ABOVE, 500),
-                              Expositions([Direction.N, Direction.NE]),
-                              is_easy_propagation=True,
-                              is_layer_thin=True,
-                              is_soft_slab_above=False,
-                              is_large_crystals=False,
-                              comment="A sketchy persistent weak slab."))
+                                               AvalancheProblem.LayerDepth.LESS_THAN_50_CM,
+                                               AvalancheProblem.Type.DRY_SLAB,
+                                               Sensitivity.VERY_EASY,
+                                               DestructiveSize.D3,
+                                               Distribution.SPECIFIC,
+                                               Elevation(Elevation.Format.ABOVE, 500),
+                                               Expositions([Direction.N, Direction.NE]),
+                                               is_easy_propagation=True,
+                                               is_layer_thin=True,
+                                               is_soft_slab_above=False,
+                                               is_large_crystals=False,
+                                               comment="A sketchy persistent weak slab."))
 
     reg.set_danger_assessment(DangerAssessment(DangerAssessment.DangerLevel.FOUR_HIGH,
                                                DangerAssessment.ForecastEvaluation.TOO_LOW,
